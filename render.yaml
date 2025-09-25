@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: node-xslt-service
+    env: node
+    plan: free
+    buildCommand: npm ci && npm run render-build
+    startCommand: npm start

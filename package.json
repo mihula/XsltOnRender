@@ -1,0 +1,15 @@
+{
+  "name": "node-xslt-service",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/compile-sef.js",
+    "start": "node server.mjs",
+    "render-build": "node scripts/compile-sef.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "saxon-js": "^2.7.0",
+    "xslt3": "^2.7.0"
+  }
+}
