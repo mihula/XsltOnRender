@@ -13,63 +13,76 @@ const upload = multer();
 
 // --- Static tester page ---
 app.use(express.static('public'));
-
-// JSON body for dynamic transform
 app.use(express.json({ limit: '10mb' }));
 
 app.get('/health', (req, res) => res.send('OK'));
 
-// JSON mode: { xml, xslt }
+// --- Helpers ---
+function parseOutputMethodFromXslt(xslt) {
+    const m = xslt.match(/<xsl:output[^>]*\bmethod\s*=\s*"(.*?)"/i);
+    if (m) return m[1].toLowerCase();
+    return null;
+}
+
+function guessContentType(xslt, serialized) {
+    const method = parseOutputMethodFromXslt(xslt);
+    if (method === 'html' || /<html[\s>]/i.test(serialized)) return 'text/html; charset=utf-8';
+    if (method === 'text') return 'text/plain; charset=utf-8';
+    if (method === 'xhtml') return 'application/xhtml+xml; charset=utf-8';
+    return 'application/xml; charset=utf-8';
+}
+
+// --- JSON endpoint ---
 app.post('/transform', async (req, res) => {
-  const { xml, xslt } = req.body || {};
-  if (!xml || !xslt) {
-    return res.status(400).json({ error: 'Missing xml or xslt in JSON body' });
-  }
-  try {
-    const html = await compileAndTransform(xml, xslt);
-    res.type('text/html').send(html);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: String(err) });
-  }
+    const { xml, xslt } = req.body || {};
+    if (!xml || !xslt) {
+        return res.status(400).json({ error: 'Missing xml or xslt in JSON body' });
+    }
+    try {
+        const { body, ctype } = await compileAndTransform(xml, xslt);
+        res.set('Content-Type', ctype).send(body);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: String(err) });
+    }
 });
 
-// multipart/form-data: fields xml, xslt (files)
+// --- multipart/form-data endpoint ---
 app.post('/transform-upload', upload.fields([{ name: 'xml' }, { name: 'xslt' }]), async (req, res) => {
-  try {
-    const xml = req.files?.xml?.[0]?.buffer?.toString('utf-8');
-    const xslt = req.files?.xslt?.[0]?.buffer?.toString('utf-8');
-    if (!xml || !xslt) {
-      return res.status(400).send('Missing XML or XSLT file');
+    try {
+        const xml = req.files?.xml?.[0]?.buffer?.toString('utf-8');
+        const xslt = req.files?.xslt?.[0]?.buffer?.toString('utf-8');
+        if (!xml || !xslt) {
+            return res.status(400).send('Missing XML or XSLT file');
+        }
+        const { body, ctype } = await compileAndTransform(xml, xslt);
+        res.set('Content-Type', ctype).send(body);
+    } catch (err) {
+        console.error(err);
+        res.status(500).send(String(err));
     }
-    const html = await compileAndTransform(xml, xslt);
-    res.type('text/html').send(html);
-  } catch (err) {
-    console.error(err);
-    res.status(500).send(String(err));
-  }
 });
 
 async function compileAndTransform(xml, xslt) {
-  // temp dir per request
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'xslt-'));
-  const xslPath = path.join(tmpDir, 'in.xslt');
-  const sefPath = path.join(tmpDir, 'out.sef.json');
-  await fs.writeFile(xslPath, xslt, 'utf-8');
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'xslt-'));
+    const xslPath = path.join(tmpDir, 'in.xslt');
+    const sefPath = path.join(tmpDir, 'out.sef.json');
+    await fs.writeFile(xslPath, xslt, 'utf-8');
 
-  // Compile XSLT -> SEF via xslt3 CLI
-  const cli = path.join(process.cwd(), 'node_modules', 'xslt3', 'xslt3.js');
-  const args = [`-xsl:${xslPath}`, `-export:${sefPath}`, '-nogo'];
-  await pexec(process.execPath, [cli, ...args]);
+    const cli = path.join(process.cwd(), 'node_modules', 'xslt3', 'xslt3.js');
+    const args = [`-xsl:${xslPath}`, `-export:${sefPath}`, '-nogo'];
+    await pexec(process.execPath, [cli, ...args]);
 
-  // Run transform
-  const sefJson = JSON.parse(await fs.readFile(sefPath, 'utf-8'));
-  const result = await SaxonJS.transform({
-    stylesheetInternal: sefJson,
-    sourceText: xml,
-    destination: 'serialized'
-  });
-  return result.principalResult;
+    const sefJson = JSON.parse(await fs.readFile(sefPath, 'utf-8'));
+    const result = await SaxonJS.transform({
+        stylesheetInternal: sefJson,
+        sourceText: xml,
+        destination: 'serialized'
+    });
+
+    const body = result.principalResult;
+    const ctype = guessContentType(xslt, body);
+    return { body, ctype };
 }
 
 const port = process.env.PORT || 3000;
