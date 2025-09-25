@@ -94,10 +94,10 @@
     </div>
 
     <div style="margin:1rem 0;">
-        <button id="btnUpload">Transformovat (multipart)</button>
-        <button id="btnJson">Transformovat (JSON)</button>
-        <button id="btnUploadHTML">Transformovat (multipart) Force HTML</button>
-        <button id="btnUploadPLAIN">Transformovat (multipart) Force PLAIN</button>
+        <button data-action="multipart" id="btnUpload">Transformovat (multipart)</button>
+        <button data-action="json" id="btnJson">Transformovat (JSON)</button>
+        <button data-action="multipart" data-force="html" id="btnUploadHTML">Transformovat (multipart) Force HTML</button>
+        <button data-action="multipart" data-force="text/plain" id="btnUploadPLAIN">Transformovat (multipart) Force PLAIN</button>
     </div>
 
     <div class="card">
@@ -110,94 +110,63 @@
         const xsltEl = document.getElementById('xslt');
         const frame = document.getElementById('result');
 
-        const btnUpload = document.getElementById('btnUpload');
-        const btnJson = document.getElementById('btnJson');
-        const btnUploadHTML = document.getElementById('btnUploadHTML');
-        const btnUploadPLAIN = document.getElementById('btnUploadPLAIN');
+        // --- helpers ---
+        const escapeHtml = s => s.replace(/[&<>]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]));
+        const detectedContentType = res => (res.headers.get('content-type') || '').toLowerCase();
 
-        async function displayResponseOfType(res, ctype) {
-            const text = await res.text();
-
-            if (ctype.includes('xml')) {
+        function renderToFrame(text, type) {
+            if (!type) type = 'text/html';
+            if (type.includes('xml')) {
                 frame.src = 'data:text/xml;charset=utf-8,' + encodeURIComponent(text);
-            } else if (ctype.includes('text/plain')) {
-                frame.srcdoc = '<pre style="white-space:pre-wrap;">' +
-                    text.replace(/[&<>]/g, s => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[s])) +
-                    '</pre>';
+            } else if (type.includes('text/plain')) {
+                frame.srcdoc = '<pre style="white-space:pre-wrap;">' + escapeHtml(text) + '</pre>';
             } else {
+                // default HTML
                 frame.srcdoc = text;
             }
         }
-        async function displayResponse(res) {
-            const ctype = (res.headers.get('content-type') || '').toLowerCase();
-            await displayResponseOfType(res, ctype);
+
+        function buildFormData() {
+            const fd = new FormData();
+            fd.append('xml', new Blob([xmlEl.value], { type: 'application/xml' }), 'input.xml');
+            fd.append('xslt', new Blob([xsltEl.value], { type: 'application/xml' }), 'input.xslt');
+            return fd;
         }
 
-        async function runMultipart() {
-            btnUpload.disabled = true;
-            try {
-                const fd = new FormData();
-                fd.append('xml', new Blob([xmlEl.value], { type: 'application/xml' }), 'input.xml');
-                fd.append('xslt', new Blob([xsltEl.value], { type: 'application/xml' }), 'input.xslt');
-                const res = await fetch('/transform-upload', { method: 'POST', body: fd });
-                await displayResponse(res);
-            } catch (e) {
-                frame.srcdoc = '<pre>' + String(e) + '</pre>';
-            } finally {
-                btnUpload.disabled = false;
-            }
+        async function sendMultipart(forceType) {
+            const res = await fetch('/transform-upload', { method: 'POST', body: buildFormData() });
+            const type = forceType || detectedContentType(res);
+            const text = await res.text();
+            renderToFrame(text, type);
         }
 
-        async function runMultipartHTML() {
-            btnUploadHTML.disabled = true;
-            try {
-                const fd = new FormData();
-                fd.append('xml', new Blob([xmlEl.value], { type: 'application/xml' }), 'input.xml');
-                fd.append('xslt', new Blob([xsltEl.value], { type: 'application/xml' }), 'input.xslt');
-                const res = await fetch('/transform-upload', { method: 'POST', body: fd });
-                await displayResponseOfType(res, 'html');
-            } catch (e) {
-                frame.srcdoc = '<pre>' + String(e) + '</pre>';
-            } finally {
-                btnUploadHTML.disabled = false;
-            }
+        async function sendJson() {
+            const res = await fetch('/transform', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ xml: xmlEl.value, xslt: xsltEl.value })
+            });
+            const type = detectedContentType(res);
+            const text = await res.text();
+            renderToFrame(text, type);
         }
 
-        async function runMultipartPLAIN() {
-            btnUploadPLAIN.disabled = true;
-            try {
-                const fd = new FormData();
-                fd.append('xml', new Blob([xmlEl.value], { type: 'application/xml' }), 'input.xml');
-                fd.append('xslt', new Blob([xsltEl.value], { type: 'application/xml' }), 'input.xslt');
-                const res = await fetch('/transform-upload', { method: 'POST', body: fd });
-                await displayResponseOfType(res, 'text/plain');
-            } catch (e) {
-                frame.srcdoc = '<pre>' + String(e) + '</pre>';
-            } finally {
-                btnUploadPLAIN.disabled = false;
-            }
+        // --- actions wiring (méně duplicit) ---
+        function withDisable(btn, fn) {
+            return async () => {
+                btn.disabled = true;
+                try { await fn(); }
+                catch (e) { frame.srcdoc = '<pre>' + escapeHtml(String(e)) + '</pre>'; }
+                finally { btn.disabled = false; }
+            };
         }
 
-        async function runJson() {
-            btnJson.disabled = true;
-            try {
-                const res = await fetch('/transform', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ xml: xmlEl.value, xslt: xsltEl.value })
-                });
-                await displayResponse(res);
-            } catch (e) {
-                frame.srcdoc = '<pre>' + String(e) + '</pre>';
-            } finally {
-                btnJson.disabled = false;
-            }
-        }
-
-        btnUpload.addEventListener('click', runMultipart);
-        btnJson.addEventListener('click', runJson);
-        btnUploadHTML.addEventListener('click', runMultipartHTML);
-        btnUploadPLAIN.addEventListener('click', runMultipartPLAIN);
+        document.querySelectorAll('button[data-action]').forEach(btn => {
+            const action = btn.dataset.action;
+            const force = btn.dataset.force || null;
+            if (action === 'multipart') btn.addEventListener('click', withDisable(btn, () => sendMultipart(force)));
+            if (action === 'json') btn.addEventListener('click', withDisable(btn, sendJson));
+        });
     </script>
 </body>
 </html>
