@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>XSLT Tester</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 2rem; }
+    textarea { width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    iframe { width: 100%; height: 320px; border: 1px solid #ccc; border-radius: 8px; }
+    .card { border: 1px solid #e5e7eb; border-radius: 12px; padding: 1rem; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
+    button { padding: .6rem 1rem; border-radius: 8px; border: 1px solid #111827; background: #111827; color: white; cursor: pointer;}
+    button:disabled { opacity: .6; cursor: not-allowed; }
+    header { margin-bottom: 1rem; }
+    small.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; color:#6b7280; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>🧪 XSLT Tester (multipart + JSON)</h1>
+    <p>
+      Server očekává <code>XML</code> a <code>XSLT</code> a vrátí transformovaný HTML.
+      <br><small class="mono">POST /transform-upload (multipart/form-data), POST /transform (JSON)</small>
+    </p>
+  </header>
+
+  <div class="row">
+    <div class="card">
+      <h2>XML</h2>
+      <textarea id="xml" rows="14"><root>
+  <message>Ahoj z testeru 👋</message>
+</root></textarea>
+    </div>
+    <div class="card">
+      <h2>XSLT</h2>
+<textarea id="xslt" rows="14"><?xml version="1.0"?>
+<xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform" version="3.0">
+  <xsl:output method="html" />
+  <xsl:template match="/">
+    <html>
+      <body>
+        <h1>Hello from XSLT 3.0</h1>
+        <p>Root element: <xsl:value-of select="name(/*)"/></p>
+        <p>Message: <xsl:value-of select="/*/message"/></p>
+      </body>
+    </html>
+  </xsl:template>
+</xsl:stylesheet></textarea>
+    </div>
+  </div>
+
+  <div style="margin:1rem 0;">
+    <button id="btnUpload">Transformovat (multipart)</button>
+    <button id="btnJson">Transformovat (JSON)</button>
+  </div>
+
+  <div class="card">
+    <h2>Výsledek</h2>
+    <iframe id="result"></iframe>
+  </div>
+
+  <script>
+    const btnUpload = document.getElementById('btnUpload');
+    const btnJson = document.getElementById('btnJson');
+    const xmlEl = document.getElementById('xml');
+    const xsltEl = document.getElementById('xslt');
+    const frame = document.getElementById('result');
+
+    async function runMultipart() {
+      btnUpload.disabled = true;
+      try {
+        const fd = new FormData();
+        fd.append('xml', new Blob([xmlEl.value], { type: 'application/xml' }), 'input.xml');
+        fd.append('xslt', new Blob([xsltEl.value], { type: 'application/xml' }), 'input.xslt');
+        const res = await fetch('/transform-upload', { method: 'POST', body: fd });
+        const html = await res.text();
+        frame.srcdoc = html;
+      } catch (e) {
+        frame.srcdoc = '<pre style="white-space:pre-wrap;">' + String(e) + '</pre>';
+      } finally {
+        btnUpload.disabled = false;
+      }
+    }
+
+    async function runJson() {
+      btnJson.disabled = true;
+      try {
+        const res = await fetch('/transform', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ xml: xmlEl.value, xslt: xsltEl.value })
+        });
+        const html = await res.text();
+        frame.srcdoc = html;
+      } catch (e) {
+        frame.srcdoc = '<pre style="white-space:pre-wrap;">' + String(e) + '</pre>';
+      } finally {
+        btnJson.disabled = false;
+      }
+    }
+
+    btnUpload.addEventListener('click', runMultipart);
+    btnJson.addEventListener('click', runJson);
+  </script>
+</body>
+</html>

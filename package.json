@@ -1,14 +1,14 @@
 {
-  "name": "node-xslt-service",
+  "name": "node-xslt-dynamic-form",
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "build": "node scripts/compile-sef.js",
     "start": "node server.mjs",
-    "render-build": "node scripts/compile-sef.js"
+    "render-build": "echo 'no precompile needed'"
   },
   "dependencies": {
     "express": "^4.19.2",
+    "multer": "^1.4.5-lts.1",
     "saxon-js": "^2.7.0",
     "xslt3": "^2.7.0"
   }

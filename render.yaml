@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: node-xslt-service
+    name: node-xslt-dynamic-form
     env: node
     plan: free
     buildCommand: npm ci && npm run render-build
